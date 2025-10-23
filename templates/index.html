@@ -1,0 +1,307 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>News Recommender</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    body { max-width: 1080px; margin: auto; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .toolbar { display: grid; grid-template-columns: 1fr auto auto; gap: .75rem; align-items: center; }
+    .chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0 1rem; }
+    .chip { padding: .35rem .6rem; border: 1px solid #ccc; border-radius: 20px; cursor: pointer; font-size: .9rem; }
+    .chip.active { background: #0ea5e9; color: white; border-color: #0ea5e9; }
+    .item { margin-bottom: 1rem; }
+    .meta { font-size: 0.85rem; color: #666; }
+    .controls { display: flex; align-items: center; gap: .75rem; }
+    .pill { font-size: .8rem; background: #eef6ff; color: #0b4d9b; border-radius: 999px; padding: .2rem .6rem; }
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; }
+    .modal.show { display: flex; }
+    .card { background: white; padding: 1.25rem; max-width: 720px; width: 96%; border-radius: .6rem; box-shadow: 0 10px 24px rgba(0,0,0,.2); }
+    .subtle { color: #555; }
+  </style>
+  <script>
+    const ALL_TOPICS = [
+      'politics','business','technology','science','health','sports','entertainment','world','india','ai','climate','education'
+    ];
+
+    function getSessionId() {
+      let sid = localStorage.getItem('session_id');
+      if (!sid) {
+        sid = 'user_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+        localStorage.setItem('session_id', sid);
+      }
+      return sid;
+    }
+
+    function getSavedInterests() {
+      try { return JSON.parse(localStorage.getItem('interests')||'[]'); } catch { return []; }
+    }
+    function saveInterests(list) { localStorage.setItem('interests', JSON.stringify(list)); }
+    function qs(sel){ return document.querySelector(sel); }
+    function qsa(sel){ return Array.from(document.querySelectorAll(sel)); }
+
+    async function trackClick(url) {
+      const sid = getSessionId();
+      try {
+        await fetch('/click', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ url: url, session_id: sid })
+        });
+      } catch (e) {
+        console.warn('Click tracking failed:', e);
+      }
+    }
+
+    function renderChips(container, selected) {
+      container.innerHTML='';
+      ALL_TOPICS.forEach(t => {
+        const span = document.createElement('span');
+        span.className = 'chip' + (selected.includes(t) ? ' active' : '');
+        span.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+        span.dataset.value = t;
+        span.addEventListener('click', () => {
+          if (span.classList.contains('active')) {
+            span.classList.remove('active');
+          } else {
+            span.classList.add('active');
+          }
+        });
+        container.appendChild(span);
+      });
+    }
+
+    function selectedChips(container){
+      return qsa('.chip.active', container).map(el => el.dataset.value);
+    }
+
+    async function fetchRecs(params) {
+      const sid = getSessionId();
+      let qsStr = '';
+      if (params instanceof URLSearchParams) {
+        params.append('session_id', sid);
+        qsStr = params.toString();
+      } else if (typeof params === 'object') {
+        params.session_id = sid;
+        qsStr = new URLSearchParams(params).toString();
+      } else if (typeof params === 'string') {
+        qsStr = params + '&session_id=' + encodeURIComponent(sid);
+      }
+      const res = await fetch(`/recommend?${qsStr}`);
+      const data = await res.json().catch(() => ({ error: 'Invalid JSON from server' }));
+      if (data.error) {
+        console.error('API error:', data.error);
+        const el = document.getElementById('results');
+        el.innerHTML = `<article><header><strong>Error</strong></header><p>${data.error}</p></article>`;
+        return [];
+      }
+      return data.items || [];
+    }
+
+    function render(items) {
+      const el = document.getElementById('results');
+      el.innerHTML = '';
+      if (!items.length) {
+        el.innerHTML = `<article><header><strong>No results</strong></header><p class="subtle">Try changing topics above or type a broader query (e.g., "top news").</p></article>`;
+        return;
+      }
+      items.forEach(it => {
+        const div = document.createElement('div');
+        div.className = 'item';
+        const d = new Date(it.published);
+        const cats = (() => { try { return (it.categories ? JSON.parse(it.categories) : []);} catch(e){return []; }})();
+        div.innerHTML = `
+          <article>
+            <header>
+              <h3 style="margin:0"><a href="${it.url}" target="_blank" rel="noopener" data-url="${it.url}">${it.title}</a></h3>
+            </header>
+            <footer class="meta">
+              <span class="pill">${it.source || ''}</span>
+              <span class="pill">${d.toLocaleString()}</span>
+              ${cats.map(c => `<span class=\"pill\">${c}</span>`).join(' ')}
+              ${it.final_score ? `<span class=\"pill\">${it.final_score.toFixed(3)}</span>`:''}
+            </footer>
+          </article>
+        `;
+        // Track clicks
+        const link = div.querySelector('a');
+        if (link) {
+          link.addEventListener('click', () => {
+            trackClick(it.url);
+          });
+        }
+        el.appendChild(div);
+      });
+    }
+
+    async function doSearch(opts={}){
+      const q = (qs('#query').value||'').trim();
+      const interests = getSavedInterests();
+      const extraCats = selectedChips(qs('#chips-search'));
+      const cats = [...new Set([...interests, ...extraCats])];
+      const base = [['k','20']];
+      if (q) base.push(['query', q]); else base.push(['query','top news']);
+      const params = new URLSearchParams(base);
+      cats.forEach(c => params.append('categories', c));
+      const items = await fetchRecs(params);
+      render(items);
+    }
+
+    function showOnboarding(){
+      const modal = qs('#onboard');
+      const chips = qs('#chips-onboard');
+      renderChips(chips, []);
+      modal.classList.add('show');
+      qs('#btnStart').onclick = async () => {
+        const picked = selectedChips(modal);
+        saveInterests(picked);
+        modal.classList.remove('show');
+        renderChips(qs('#chips-search'), picked);
+        await doSearch();
+      };
+    }
+
+    function changeInterests(){
+      const modal = qs('#onboard');
+      const current = getSavedInterests();
+      renderChips(qs('#chips-onboard'), current);
+      modal.classList.add('show');
+    }
+
+    let refreshTimer = null;
+    function setAutoRefresh(enabled){
+      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer=null; }
+      if (enabled) {
+        refreshTimer = setInterval(() => doSearch(), 120000); // 2 minutes
+      }
+    }
+
+    async function loadTrending() {
+      try {
+        const res = await fetch('/trending?hours=72&top_n=8');
+        const data = await res.json();
+        if (data.trends && data.trends.length > 0) {
+          const container = qs('#trending-chips');
+          container.innerHTML = '';
+          data.trends.forEach(t => {
+            const span = document.createElement('span');
+            span.className = 'chip';
+            span.textContent = `${t.term} (${t.count})`;
+            span.style.cursor = 'pointer';
+            span.addEventListener('click', () => {
+              qs('#query').value = t.term;
+              doSearch();
+            });
+            container.appendChild(span);
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to load trending:', e);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const current = getSavedInterests();
+      if (!current.length) {
+        showOnboarding();
+      }
+      renderChips(qs('#chips-search'), current);
+      await doSearch();
+      await loadTrending();
+
+      qs('#searchForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        // If onboarding is open, auto-accept current picks (can be empty) and close
+        const modal = qs('#onboard');
+        if (modal.classList.contains('show')) {
+          const picked = selectedChips(modal);
+          saveInterests(picked);
+          modal.classList.remove('show');
+          renderChips(qs('#chips-search'), picked);
+        }
+        await doSearch();
+      });
+      qs('#btnRecent').addEventListener('click', async () => {
+        qs('#query').value = '';
+        const modal = qs('#onboard');
+        if (modal.classList.contains('show')) {
+          const picked = selectedChips(modal);
+          saveInterests(picked);
+          modal.classList.remove('show');
+          renderChips(qs('#chips-search'), picked);
+        }
+        await doSearch();
+      });
+      qs('#btnChangeInterests').addEventListener('click', () => {
+        changeInterests();
+      });
+      qs('#autoRefresh').addEventListener('change', (e) => setAutoRefresh(e.target.checked));
+    });
+  </script>
+</head>
+<body>
+  <header>
+    <h2>News Recommender</h2>
+    <div class="controls">
+      <label><input type="checkbox" id="autoRefresh" /> Auto-refresh</label>
+      <button id="btnChangeInterests" class="secondary">Change interests</button>
+    </div>
+  </header>
+
+  <main>
+    <form id="searchForm" class="toolbar">
+      <input type="text" id="query" name="query" placeholder="Search topics: India elections, AI, markets" />
+      <button type="submit">Search</button>
+      <button type="button" id="btnRecent">Recent</button>
+    </form>
+
+    <div class="subtle">Filters (click to toggle):</div>
+    <div id="chips-search" class="chips"></div>
+
+    <div class="subtle" style="margin-top: 1rem;">Trending now (click to search):</div>
+    <div id="trending-chips" class="chips"></div>
+
+    <hr />
+    <section id="results"></section>
+  </main>
+
+  <!-- Onboarding modal for cold start -->
+  <div id="onboard" class="modal" aria-modal="true" role="dialog">
+    <div class="card">
+      <h3>Pick your interests</h3>
+      <p class="subtle">Choose a few topics to personalize your feed. You can change this anytime.</p>
+      <div id="chips-onboard" class="chips"></div>
+      <div style="display:flex; gap:.75rem; justify-content:flex-end; margin-top: .75rem;">
+        <button id="btnSkip" class="secondary">Skip for now</button>
+        <button id="btnStart" class="contrast">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Close modal on Escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const modal = document.getElementById('onboard');
+        if (modal.classList.contains('show')) {
+          modal.classList.remove('show');
+        }
+      }
+    });
+    // Skip button behavior
+    document.addEventListener('DOMContentLoaded', () => {
+      const skip = document.getElementById('btnSkip');
+      if (skip) {
+        skip.addEventListener('click', () => {
+          const modal = document.getElementById('onboard');
+          saveInterests([]);
+          modal.classList.remove('show');
+          renderChips(document.getElementById('chips-search'), []);
+        });
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+ENV/
+env/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data files (large files, can be regenerated)
+data/fastembed_cache/
+data/index.faiss
+data/meta.csv
+data/mind/
+
+# Models (large files, add download script instead)
+models/*.pt
+models/*.pkl
+models/*.pth
+
+# Dataset archive (very large)
+Dataset-archive/
+
+# Reports and documentation (not needed on GitHub)
+Report/
+docs/Report/
+docs/*.docx
+docs/*.pdf
+docs/*.txt
+docs/NRMS_Training_Colab.ipynb
+REORGANIZATION_SUMMARY.md
+
+# Old documentation files (keep only essential docs)
+docs/AI_ENHANCEMENT_STRATEGY.md
+docs/AI_MODEL_IMPROVEMENTS.md
+docs/BUG_FIXES.md
+docs/INTEGRATION_COMPLETE.md
+docs/PROJECT_COMPLETE.md
+docs/PRESENTATION_CONTENT.txt
+docs/PRESENTATION_GUIDE.md
+docs/GAMMA_AI_PROMPT.txt
+docs/SYSTEM_STATUS.md
+docs/TRENDING_IMPROVEMENTS.md
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+
+# System files
+system_status.json
+user_profiles.json
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
