@@ -91,7 +91,7 @@ const Index = () => {
 
   const loadTrendingKeywords = async () => {
     try {
-      const trends = await fetchTrending(72, 8);
+      const trends = await fetchTrending(168, 8);  // 7 days to capture older data
       setTrendingKeywords(trends.map(t => t.term));
     } catch (err) {
       console.error("Failed to load trending keywords:", err);

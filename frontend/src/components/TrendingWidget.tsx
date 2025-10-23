@@ -30,7 +30,7 @@ export function TrendingWidget({ keywords, onKeywordClick }: TrendingWidgetProps
       </div>
 
       <div className="mt-4 pt-4 border-t text-xs text-muted-foreground">
-        Updated from last 72 hours
+        Updated from last 7 days
       </div>
     </div>
   );
